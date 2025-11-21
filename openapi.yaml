@@ -1,0 +1,597 @@
+openapi: 3.0.3
+info:
+  title: Gibiverse API
+  description: |-
+    A API para a plataforma Gibiverse, um serviço de assinatura para Histórias em Quadrinhos (HQs) de autores independentes.
+    
+    Funcionalidades incluem:
+    - Autenticação de usuários (Leitores e Criadores)
+    - Gerenciamento de perfis de Criador
+    - CRUD completo para HQs, com lógica de propriedade e paywall (AGORA REAL)
+    - Gerenciamento do progresso de leitura (NOVO)
+    - Gerenciamento de assinaturas (MOCK)
+  version: 1.2.0 # Versão atualizada
+
+servers:
+  - url: http://localhost:3000
+    description: Servidor de Desenvolvimento Local (base URL)
+
+tags:
+  - name: Health
+    description: Verificação de status da API
+  - name: Authentication
+    description: Endpoints para registro e login de usuários
+  - name: Creator
+    description: Operações relacionadas ao perfil e conteúdo do Criador
+  - name: HQs
+    description: Operações para interagir com as Histórias em Quadrinhos (HQs)
+  - name: Subscriptions
+    description: Operações para gerenciamento de assinaturas (MOCK)
+  - name: Uploads
+    description: Endpoint para upload de arquivos
+
+paths:
+  /api/health:
+    get:
+      tags:
+        - Health
+      summary: Verifica a saúde da API
+      responses:
+        '200':
+          description: A API está operacional
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: Gibiverse API
+
+  /api/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Registra um novo usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegisterInput'
+      responses:
+        '201':
+          description: Usuário criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPublicProfile'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: O e-mail fornecido já está em uso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Autentica um usuário e retorna um token JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLoginInput'
+      responses:
+        '200':
+          description: Login bem-sucedido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthPayload'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/creator/profile:
+    get:
+      tags:
+        - Creator
+      summary: Obtém o perfil do criador logado
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Perfil do criador encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Creator'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - Creator
+      summary: Cria um perfil para o usuário criador logado
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatorProfileInput'
+      responses:
+        '201':
+          description: Perfil de criador criado com sucesso
+          content:
+            application:json
+              schema:
+                $ref: '#/components/schemas/Creator'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: O usuário já possui um perfil de criador
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/creator/hqs:
+    get:
+      tags:
+        - Creator
+      summary: Lista as HQs publicadas pelo criador logado
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/GenreQuery'
+        - $ref: '#/components/parameters/IsPremiumQuery'
+      responses:
+        '200':
+          description: Uma lista paginada e filtrada das HQs do criador
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedHQsWithProgress' # Atualizado para incluir progresso
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/hqs:
+    get:
+      tags:
+        - HQs
+      summary: Lista todas as HQs do catálogo (paginado e filtrável). Progresso de leitura incluído se autenticado.
+      security:
+        - bearerAuth: [] # Opcional na rota, mas incluído para documentação
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - $ref: '#/components/parameters/SearchQuery'
+        - $ref: '#/components/parameters/GenreQuery'
+        - $ref: '#/components/parameters/IsPremiumQuery'
+      responses:
+        '200':
+          description: Uma lista paginada de todas as HQs, incluindo o progresso de leitura se o usuário estiver logado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedHQsWithProgress' # Atualizado para incluir progresso
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+        - HQs
+      summary: Cria uma nova HQ
+      description: Requer uma URL para `coverImage` obtida previamente do endpoint de upload.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HQCreateInput'
+      responses:
+        '201':
+          description: HQ criada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HQ'
+        '400':
+          description: Erro de validação ou perfil de criador não encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/hqs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: O ID da HQ
+        schema:
+          type: string
+    get:
+      tags:
+        - HQs
+      summary: Obtém os detalhes de uma HQ específica.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Detalhes da HQ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HQDetails'
+        '403':
+          description: Conteúdo premium, assinatura necessária (ou expirada)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags:
+        - HQs
+      summary: Atualiza uma HQ existente
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HQUpdateInput'
+      responses:
+        '200':
+          description: HQ atualizada com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HQDetails'
+        '403':
+          description: O usuário não tem permissão para editar esta HQ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags:
+        - HQs
+      summary: Exclui uma HQ
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: HQ excluída com sucesso (sem conteúdo)
+        '403':
+          description: O usuário não tem permissão para excluir esta HQ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/hqs/{id}/read-progress:
+    post:
+      tags:
+        - HQs
+      summary: Atualiza o progresso de leitura da HQ para o usuário logado.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: O ID da HQ
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReadProgressInput' # NOVO SCHEMA
+      responses:
+        '200':
+          description: Progresso de leitura atualizado com sucesso.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadingHistory' # NOVO SCHEMA
+        '400':
+          description: Página lida inválida (excede o número total de páginas)
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/subscriptions/purchase:
+    post:
+      tags:
+        - Subscriptions
+      summary: Simula a compra de uma assinatura premium mensal.
+      description: Mock de compra para fins de MVP. Ativa uma assinatura de 30 dias para o usuário logado.
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Assinatura ativada com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string, example: "Assinatura ativada com sucesso (Simulado)." }
+                  subscription: { $ref: '#/components/schemas/Subscription' } # NOVO SCHEMA
+        '409':
+          description: O usuário já possui uma assinatura ativa.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/upload/image:
+    post:
+      tags:
+        - Uploads
+      summary: Faz o upload de uma imagem
+      description: Aceita uma imagem e retorna sua URL pública para ser usada em outros endpoints.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+              required:
+                - image
+      responses:
+        '201':
+          description: Imagem enviada com sucesso
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: Arquivo enviado com sucesso.
+                  url:
+                    type: string
+                    format: uri
+                    example: http://localhost:3000/uploads/image-1678886400000-123456789.png
+        '400':
+          description: Formato de arquivo inválido ou nenhum arquivo enviado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  schemas:
+    UserRegisterInput:
+      type: object
+      required: [email, name, password]
+      properties:
+        email: { type: string, format: email, example: 'bruce@wayne.com' }
+        name: { type: string, example: 'Bruce Wayne' }
+        password: { type: string, format: password, minLength: 8, example: 'iambatman123' }
+        role: { type: string, enum: [Leitor, Criador], default: Leitor }
+    UserLoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: 'bruce@wayne.com' }
+        password: { type: string, format: password, example: 'iambatman123' }
+    UserPublicProfile:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { type: string, enum: [Leitor, Criador, Admin] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AuthPayload:
+      type: object
+      properties:
+        token: { type: string, description: Bearer token JWT }
+        user: { $ref: '#/components/schemas/UserPublicProfile' }
+    CreatorProfileInput:
+      type: object
+      required: [penName]
+      properties:
+        penName: { type: string, example: 'The Batman' }
+        bio: { type: string, example: 'I am vengeance. I am the night. I am Batman.' }
+    Creator:
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        penName: { type: string }
+        bio: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    HQCreateInput:
+      type: object
+      required: [title, coverImage]
+      properties:
+        title: { type: string, example: 'The Dark Knight Returns' }
+        genre: { type: string, example: 'Superhero' }
+        sinopse: { type: string, example: 'An older Batman comes out of retirement...' }
+        coverImage: { type: string, format: uri, description: "URL obtida do endpoint /upload/image", example: 'http://localhost:3000/uploads/image-123.jpg' }
+        isPremium: { type: boolean, default: false }
+    HQUpdateInput:
+      type: object
+      properties:
+        title: { type: string }
+        genre: { type: string }
+        sinopse: { type: string }
+        coverImage: { type: string, format: uri }
+        isPremium: { type: boolean }
+    HQ:
+      type: object
+      properties:
+        id: { type: string }
+        creatorId: { type: string }
+        title: { type: string }
+        genre: { type: string }
+        sinopse: { type: string }
+        coverImage: { type: string, format: uri }
+        isPremium: { type: boolean }
+        pages: { type: array, items: { type: string, format: uri } }
+    HQDetails:
+      allOf:
+        - $ref: '#/components/schemas/HQ'
+        - type: object
+          properties:
+            storagePath: { type: string, description: 'Caminho interno para os arquivos da HQ (APENAS PARA CRIAÇÃO/EDIÇÃO, NÃO EXPOSTO PARA LEITORES)' }
+            creatorPenName: { type: string }
+    HQWithProgress: # NOVO SCHEMA (HQ para listagem com progresso)
+      allOf:
+        - $ref: '#/components/schemas/HQ'
+        - type: object
+          properties:
+            creatorPenName: { type: string }
+            lastPageRead: { type: integer, nullable: true, description: 'O índice (0-based) da última página lida pelo usuário logado. Null se não houver progresso.' }
+          required: [creatorPenName]
+          # Remove o storagePath para a resposta pública
+          # Nota: O campo pages está sendo removido no service.findById para leitores não logados/não pagantes (não precisa de remoção explícita aqui).
+    PaginatedHQs:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/HQDetails' } }
+        totalItems: { type: integer }
+        totalPages: { type: integer }
+        currentPage: { type: integer }
+        itemsPerPage: { type: integer }
+    PaginatedHQsWithProgress: # NOVO SCHEMA (Paginado de HQs com progresso)
+      type: object
+      properties:
+        data: { type: array, items: { $ref: '#/components/schemas/HQWithProgress' } }
+        totalItems: { type: integer }
+        totalPages: { type: integer }
+        currentPage: { type: integer }
+        itemsPerPage: { type: integer }
+    ReadProgressInput: # NOVO SCHEMA (Input para atualização de progresso)
+      type: object
+      required: [lastPageRead]
+      properties:
+        lastPageRead: { type: integer, minimum: 0, description: 'O índice (0-based) da última página lida.' }
+    ReadingHistory: # NOVO SCHEMA (Resposta de atualização de progresso)
+      type: object
+      properties:
+        userId: { type: string }
+        hqId: { type: string }
+        lastPageRead: { type: integer }
+        lastReadAt: { type: string, format: date-time }
+    Subscription: # NOVO SCHEMA (Entidade de Assinatura)
+      type: object
+      properties:
+        id: { type: string }
+        userId: { type: string }
+        planId: { type: string }
+        status: { type: string, enum: [Active, Canceled] }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Error: { type: object, properties: { message: { type: string } } }
+    ValidationError:
+      type: object
+      properties:
+        message: { type: string, example: "Erro de validação." }
+        errors: { type: object, description: Mapeamento de campos para arrays de erro, example: { password: ["A senha deve ter pelo menos 8 caracteres."] } }
+  
+  parameters:
+    PageQuery:
+      name: page
+      in: query
+      description: O número da página
+      schema: { type: integer, default: 1, minimum: 1 }
+    LimitQuery:
+      name: limit
+      in: query
+      description: O número de itens por página
+      schema: { type: integer, default: 10, minimum: 1, maximum: 100 }
+    SearchQuery:
+      name: search
+      in: query
+      description: Termo para busca textual no título e sinopse
+      schema: { type: string }
+    GenreQuery:
+      name: genre
+      in: query
+      description: Filtra HQs por um gênero específico
+      schema: { type: string }
+    IsPremiumQuery:
+      name: isPremium
+      in: query
+      description: Filtra por HQs premium (true) ou gratuitas (false)
+      schema: { type: boolean }
+
+  responses:
+    Unauthorized:
+      description: Token de autenticação inválido ou não fornecido
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    Forbidden:
+      description: O usuário não tem permissão para realizar esta ação
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    NotFound:
+      description: O recurso solicitado não foi encontrado
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    ValidationError:
+      description: Erro de validação nos dados de entrada
+      content: { application/json: { schema: { $ref: '#/components/schemas/ValidationError' } } }
+            
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
